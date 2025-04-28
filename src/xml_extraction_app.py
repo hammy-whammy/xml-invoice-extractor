@@ -5,9 +5,15 @@ import io
 
 st.title("UBL Invoice XML Extractor")
 
+st.markdown("""
+**Instructions:**
+- Please select all the XML files in your invoice folder when uploading.
+- Only files with a `.xml` extension will be processed; other files will be ignored.
+""")
+
 uploaded_files = st.file_uploader(
-    "Upload one or more UBL XML invoice files", 
-    type="xml", 
+    "Upload all UBL XML invoice files from your folder (select all .xml files)", 
+    type=None, 
     accept_multiple_files=True
 )
 
@@ -49,22 +55,27 @@ def extract_invoice_data(xml_file):
     return records
 
 if uploaded_files:
-    all_records = []
-    for xml_file in uploaded_files:
-        records = extract_invoice_data(xml_file)
-        all_records.extend(records)
-    if all_records:
-        df = pd.DataFrame(all_records)
-        st.dataframe(df)
-        output = io.BytesIO()
-        df.to_excel(output, index=False)
-        st.download_button(
-            label="Download Excel",
-            data=output.getvalue(),
-            file_name="xml_out.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # Only process files with .xml extension
+    xml_files = [f for f in uploaded_files if f.name.lower().endswith('.xml')]
+    if not xml_files:
+        st.warning("No XML files detected. Please select .xml files only.")
     else:
-        st.warning("No valid invoice lines found in the uploaded files.")
+        all_records = []
+        for xml_file in xml_files:
+            records = extract_invoice_data(xml_file)
+            all_records.extend(records)
+        if all_records:
+            df = pd.DataFrame(all_records)
+            st.dataframe(df)
+            output = io.BytesIO()
+            df.to_excel(output, index=False)
+            st.download_button(
+                label="Download Excel",
+                data=output.getvalue(),
+                file_name="xml_out.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.warning("No valid invoice lines found in the uploaded XML files.")
 else:
-    st.info("Please upload one or more XML files.")
+    st.info("Please upload all XML files from your folder.")
