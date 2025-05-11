@@ -62,7 +62,8 @@ if uploaded_file:
             xml_files_to_process = []
             for root_dir, _, files in os.walk(temp_dir):
                 for file in files:
-                    if file.lower().endswith('.xml'):
+                    # Filter out hidden files (e.g., macOS AppleDouble files starting with '._')
+                    if not file.lower().startswith('._') and file.lower().endswith('.xml'):
                         xml_files_to_process.append(os.path.join(root_dir, file))
 
             if not xml_files_to_process:
