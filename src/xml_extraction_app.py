@@ -67,8 +67,11 @@ def extract_totals_from_xml_root(root, ns, source_filename):
     # Extract invoice number for identification
     invoice_number = root.findtext('.//cbc:ID', default='', namespaces=ns)
     
-    # Extract total HT (before tax) - commonly found in LegalMonetaryTotal/LineExtensionAmount
-    total_ht = root.findtext('.//cac:LegalMonetaryTotal/cbc:LineExtensionAmount', default='', namespaces=ns)
+    # Extract total HT (before tax) - commonly found in LegalMonetaryTotal/TaxExclusiveAmount
+    total_ht = root.findtext('.//cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount', default='', namespaces=ns)
+    if not total_ht:
+        # Fallback to LineExtensionAmount if TaxExclusiveAmount is not available
+        total_ht = root.findtext('.//cac:LegalMonetaryTotal/cbc:LineExtensionAmount', default='', namespaces=ns)
     
     # Extract total TTC (including tax) - commonly found in LegalMonetaryTotal/TaxInclusiveAmount or PayableAmount
     total_ttc = root.findtext('.//cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount', default='', namespaces=ns)
@@ -76,9 +79,7 @@ def extract_totals_from_xml_root(root, ns, source_filename):
         total_ttc = root.findtext('.//cac:LegalMonetaryTotal/cbc:PayableAmount', default='', namespaces=ns)
     
     # Extract tax amount
-    tax_amount = root.findtext('.//cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount', default='', namespaces=ns)
-    if not tax_amount:
-        tax_amount = root.findtext('.//cac:TaxTotal/cbc:TaxAmount', default='', namespaces=ns)
+    tax_amount = root.findtext('.//cac:TaxTotal/cbc:TaxAmount', default='', namespaces=ns)
     
     # Extract currency if available
     currency = ''
