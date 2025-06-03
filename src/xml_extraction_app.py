@@ -15,6 +15,19 @@ st.markdown("""
 - For large numbers of files, ensure the ZIP file is not too large to avoid network errors.
 """)
 
+# Add extraction mode selection
+extraction_mode = st.radio(
+    "Choose extraction mode:",
+    ["Detailed Line Items", "Total Amounts Only (TTC & HT)"],
+    help="Select 'Detailed Line Items' for full invoice line data or 'Total Amounts Only' for just TTC and HT totals"
+)
+
+# Display mode-specific information
+if extraction_mode == "Detailed Line Items":
+    st.info("📋 **Detailed Mode**: Extracts all invoice line items including description, quantity, weight, unit price, total, and designation.")
+else:
+    st.info("💰 **Total Amounts Mode**: Extracts only the invoice number, total HT (before tax), total TTC (including tax), tax amount, and currency.")
+
 uploaded_file = st.file_uploader(
     "Upload a ZIP file containing UBL XML invoice files",
     type=['zip'], # Specify ZIP type for client-side filtering
@@ -48,6 +61,41 @@ def extract_data_from_xml_root(root, ns, source_filename):
             'SourceFile':  source_filename,
         })
     return records
+
+def extract_totals_from_xml_root(root, ns, source_filename):
+    """Extracts only total amounts (TTC and HT) from a parsed XML root."""
+    # Extract invoice number for identification
+    invoice_number = root.findtext('.//cbc:ID', default='', namespaces=ns)
+    
+    # Extract total HT (before tax) - commonly found in LegalMonetaryTotal/LineExtensionAmount
+    total_ht = root.findtext('.//cac:LegalMonetaryTotal/cbc:LineExtensionAmount', default='', namespaces=ns)
+    
+    # Extract total TTC (including tax) - commonly found in LegalMonetaryTotal/TaxInclusiveAmount or PayableAmount
+    total_ttc = root.findtext('.//cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount', default='', namespaces=ns)
+    if not total_ttc:
+        total_ttc = root.findtext('.//cac:LegalMonetaryTotal/cbc:PayableAmount', default='', namespaces=ns)
+    
+    # Extract tax amount
+    tax_amount = root.findtext('.//cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount', default='', namespaces=ns)
+    if not tax_amount:
+        tax_amount = root.findtext('.//cac:TaxTotal/cbc:TaxAmount', default='', namespaces=ns)
+    
+    # Extract currency if available
+    currency = ''
+    currency_element = root.find('.//cac:LegalMonetaryTotal/cbc:LineExtensionAmount', ns)
+    if currency_element is not None and 'currencyID' in currency_element.attrib:
+        currency = currency_element.attrib['currencyID']
+    
+    record = {
+        'Invoice Number': invoice_number,
+        'Total HT': total_ht,
+        'Total TTC': total_ttc,
+        'Tax Amount': tax_amount,
+        'Currency': currency,
+        'SourceFile': source_filename,
+    }
+    
+    return [record] if any([total_ht, total_ttc]) else []
 
 if uploaded_file:
     st.info("ZIP file uploaded. Extracting contents...")
@@ -91,12 +139,19 @@ if uploaded_file:
                         tree = ET.parse(xml_file_path)
                         root = tree.getroot()
 
-                        records_from_file = extract_data_from_xml_root(root, ns, file_name)
+                        # Choose extraction function based on selected mode
+                        if extraction_mode == "Detailed Line Items":
+                            records_from_file = extract_data_from_xml_root(root, ns, file_name)
+                        else:  # Total Amounts Only
+                            records_from_file = extract_totals_from_xml_root(root, ns, file_name)
 
                         if records_from_file:
                             all_records.extend(records_from_file)
                         else:
-                            files_with_no_invoice_lines.append(file_name)
+                            if extraction_mode == "Detailed Line Items":
+                                files_with_no_invoice_lines.append(file_name)
+                            else:
+                                files_with_no_invoice_lines.append(file_name)
 
                         successfully_parsed_files.append(file_name)
 
@@ -114,8 +169,9 @@ if uploaded_file:
                 st.write(f"- Successfully parsed files: {len(successfully_parsed_files)}")
 
                 if files_with_no_invoice_lines:
-                    st.write(f"- Files parsed but with no invoice lines found: {len(files_with_no_invoice_lines)}")
-                    with st.expander("Show files parsed with no invoice lines"):
+                    data_type = "invoice lines" if extraction_mode == "Detailed Line Items" else "total amounts"
+                    st.write(f"- Files parsed but with no {data_type} found: {len(files_with_no_invoice_lines)}")
+                    with st.expander(f"Show files parsed with no {data_type}"):
                         for fname in files_with_no_invoice_lines:
                             st.info(fname)
 
@@ -126,22 +182,27 @@ if uploaded_file:
                             st.error(f"{fname}: {error_msg}")
 
                 if all_records:
-                    st.subheader("Extracted Invoice Data")
+                    data_title = "Extracted Invoice Data" if extraction_mode == "Detailed Line Items" else "Extracted Total Amounts"
+                    st.subheader(data_title)
                     df = pd.DataFrame(all_records)
                     st.dataframe(df)
 
                     output = io.BytesIO()
+                    sheet_name = 'InvoiceData' if extraction_mode == "Detailed Line Items" else 'TotalAmounts'
+                    file_name = "extracted_invoice_data.xlsx" if extraction_mode == "Detailed Line Items" else "extracted_total_amounts.xlsx"
+                    
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        df.to_excel(writer, index=False, sheet_name='InvoiceData')
+                        df.to_excel(writer, index=False, sheet_name=sheet_name)
 
                     st.download_button(
                         label="Download Excel",
                         data=output.getvalue(),
-                        file_name="extracted_invoice_data.xlsx",
+                        file_name=file_name,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                 elif successfully_parsed_files and not all_records and not failed_to_parse_files:
-                    st.info("All XML files were parsed successfully, but no invoice line data was found in any of them.")
+                    data_type = "invoice line data" if extraction_mode == "Detailed Line Items" else "total amount data"
+                    st.info(f"All XML files were parsed successfully, but no {data_type} was found in any of them.")
                 elif not successfully_parsed_files and failed_to_parse_files and not all_records:
                     st.warning("No data extracted. All attempted XML files failed to parse.")
                 elif not all_records and not failed_to_parse_files and not successfully_parsed_files and xml_files_to_process:
