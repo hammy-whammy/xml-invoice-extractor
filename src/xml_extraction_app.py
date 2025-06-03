@@ -82,9 +82,22 @@ def extract_totals_from_xml_root(root, ns, source_filename):
     
     # Extract currency if available
     currency = ''
-    currency_element = root.find('.//cac:LegalMonetaryTotal/cbc:LineExtensionAmount', ns)
-    if currency_element is not None and 'currencyID' in currency_element.attrib:
-        currency = currency_element.attrib['currencyID']
+    # First try to get from DocumentCurrencyCode (most reliable)
+    currency = root.findtext('.//cbc:DocumentCurrencyCode', default='', namespaces=ns)
+    
+    # If not found, try to get from currencyID attributes in monetary amounts
+    if not currency:
+        for xpath in [
+            './/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount',
+            './/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount', 
+            './/cac:LegalMonetaryTotal/cbc:LineExtensionAmount',
+            './/cac:LegalMonetaryTotal/cbc:PayableAmount',
+            './/cac:TaxTotal/cbc:TaxAmount'
+        ]:
+            currency_element = root.find(xpath, ns)
+            if currency_element is not None and 'currencyID' in currency_element.attrib:
+                currency = currency_element.attrib['currencyID']
+                break
     
     record = {
         'Invoice Number': invoice_number,
